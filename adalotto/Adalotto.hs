@@ -13,18 +13,18 @@
 module Adalotto where
 
 import           Data.Maybe                (fromJust, Maybe (Nothing))
-import           Plutus.V1.Ledger.Interval as V1APIL(contains,before,after, overlaps)
+import           Plutus.V1.Ledger.Interval as V1APIL(overlaps)
 import           Plutus.V2.Ledger.Api      as V2Api (BuiltinData, PubKeyHash (PubKeyHash),
                                             ScriptContext (scriptContextTxInfo),
                                             TxInfo (txInfoValidRange),
-                                            Validator, from, mkValidatorScript, toBuiltin, POSIXTime, Interval, to)
+                                            Validator, mkValidatorScript, toBuiltin, POSIXTime, to)
 import           Plutus.V2.Ledger.Contexts (txSignedBy)
 import           PlutusTx                  (compile, unstableMakeIsData)
-import           PlutusTx.Prelude          ( Bool (False, True), traceIfFalse, ($), (&&), Integer, (||) )
+import           PlutusTx.Prelude          ( Bool (False, True), traceIfFalse, ($), (&&), (||) )
 import           Prelude                   ( IO,String,Either(Left),Either(Right),error,show, (.), Show, Int )
 import           Utilities                 (posixTimeFromIso8601,
                                             printDataToJSON,
-                                            wrapValidator, writeValidatorToFile)
+                                            wrapValidator, writeValidatorToFile, writeDataToFile)
 
 import           Blockfrost.Client         (runBlockfrost
                                            , getLatestBlock
@@ -48,35 +48,27 @@ import GHC.Generics ( Generic )
 
 data AdaLottoDatum = AdaLottoDatum
     { signer   :: PubKeyHash
+    , tresory  :: PubKeyHash
     , limitOfContract  :: V2Api.POSIXTime
-    , datumticket    :: [Integer]
     }  deriving Show
-
-newtype Ticket  = Ticket 
-    {ticket :: [Int] } deriving (Show, Generic, ToJSON, FromJSON )
-
 
 unstableMakeIsData ''AdaLottoDatum
 
 {-# INLINABLE mkLottoValidator #-}
 mkLottoValidator :: AdaLottoDatum -> () -> ScriptContext -> Bool
-mkLottoValidator dat () ctx =  (traceIfFalse "winner signature missing" signedByWinner &&
+mkLottoValidator dat () ctx =  (traceIfFalse "not the winner signature " signedByWinner &&
                                 traceIfFalse "claiming deadline passed" claimDeadLine ) ||
                                (traceIfFalse "deadline not passed" claimBytresory &&
                                 traceIfFalse "Not signed by tresory" signedByTresory)
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
-
     signedByWinner :: Bool
     signedByWinner = txSignedBy info $ signer dat
-
     signedByTresory :: Bool
-    signedByTresory = txSignedBy info "867730ec6fcbcb81cee7b424400c54c1eccff03afd36bf59a691fba8"
-
+    signedByTresory = txSignedBy info $ tresory dat
     claimDeadLine :: Bool
     claimDeadLine = V1APIL.overlaps (V2Api.to $ limitOfContract dat) $ txInfoValidRange info
-
     claimBytresory :: Bool
     claimBytresory = if claimDeadLine then False else True
 
@@ -93,21 +85,56 @@ validator = mkValidatorScript $$(compile [|| mkWrappedAdaLottoValidator ||])
 saveVal :: IO ()
 saveVal = writeValidatorToFile "./contract/AdaLotto.plutus" validator
 
+printAdaLottoDatumJSON :: PubKeyHash -> PubKeyHash -> String  -> IO ()
+printAdaLottoDatumJSON tpkh wpkh time  = printDataToJSON $ AdaLottoDatum 
+    { signer   = wpkh
+    , tresory  = tpkh
+    , limitOfContract = fromJust $ posixTimeFromIso8601 time
+    }
+
+writeAdaLottoDatumToFile ::PubKeyHash -> PubKeyHash -> String  -> IO ()
+writeAdaLottoDatumToFile tpkh wpkh time  = writeDataToFile "./datum/adaLottoDatum.json" $ AdaLottoDatum 
+    { signer   = wpkh
+    , tresory  = tpkh
+    , limitOfContract = fromJust $ posixTimeFromIso8601 time
+    }
+
+makeFakeWinnerDatum :: IO()
+makeFakeWinnerDatum = writeAdaLottoDatumToFile tresoryPubKeyHash' myPubKeyHash' "2023-05-18T16:00:00.0Z" 
+makeFakeWinnerDatum' :: IO()
+makeFakeWinnerDatum' = printAdaLottoDatumJSON tresoryPubKeyHash' myPubKeyHash' "2023-05-18T16:00:00.0Z"
+
+ --This function assemble data fund in metadata with blockfrost API
+--makeWinnerDatum :: IO()
+--makeWinnerDatum = printAdaLottoDatumJSON tresoryPubKeyHash' winnerPubKeyHash deadlineTime
+
+
+--------------------------------------------------------------------------------------------------
+------------------------------------- TRESORY FUNCTION  --------------------------------------------
+tresoryPubKeyHash ::BS.ByteString ->  PubKeyHash
+tresoryPubKeyHash bs = PubKeyHash $ toBuiltin $ bytesFromHex bs
+
+tresoryPubKeyHash' ::  PubKeyHash
+tresoryPubKeyHash' = PubKeyHash $ toBuiltin $ bytesFromHex tresoryHash
+
+tresoryHash :: BS.ByteString
+tresoryHash = "6df72ce6ff0d726e34a2f833aacd299267a773335e0329f13408b6b1"
+--------------------------------------------------------------------------------------------------
+------------------------------------- SIGNER FUNCTION --------------------------------------------
+winnerPubKeyHash :: BS.ByteString -> PubKeyHash
+winnerPubKeyHash bs = PubKeyHash $ toBuiltin $ bytesFromHex bs
+
+myPubKeyHash' ::  PubKeyHash
+myPubKeyHash' = PubKeyHash $ toBuiltin $ bytesFromHex myHash
+
+myHash :: BS.ByteString
+myHash = "867730ec6fcbcb81cee7b424400c54c1eccff03afd36bf59a691fba8"
+
 bytesFromHex :: BS.ByteString -> BS.ByteString
 bytesFromHex = P.bytes . fromEither . P.fromHex
     where
         fromEither (Left e)  = error $ show e
         fromEither (Right b) = b
-
-printAdaLottoDatumJSON :: PubKeyHash -> String  -> IO ()
-printAdaLottoDatumJSON pkh time  = printDataToJSON $ AdaLottoDatum
-    { signer   = pkh
-    , limitOfContract = fromJust $ posixTimeFromIso8601 time
-    , datumticket   = [1,2,3,4,5]
-    }
-
----------------------------------------------------------------------------------------------------
--------------------------------------make plutus contract in function of metadata--------------------------------------------
 
 
 ---------------------------------------------------------------------------------------------------
@@ -155,24 +182,14 @@ takelast []  = TxMetaJSON "rien" Nothing
 myValue :: TxMetaJSON ->  AESO.Value  --sample
 myValue = toJSON
 
---aValue :: Maybe AESO.Value
---aValue = Just (Object (fromList [("Ticket",Array [Number 8.0,Number 10.0,Number 18.0,Number 20.0,Number 42.0])]))
 --------------------------------------------------------------------------------------------------
 ------------------------------------- JSON FUNCTIONS --------------------------------------------
 
+newtype Ticket  = Ticket 
+    {ticket :: [Int] } deriving (Show, Generic, ToJSON, FromJSON )
+
 --------------------------------------------------------------------------------------------------
-------------------------------------- TRESORY SAMPLE  --------------------------------------------
-tresoryPubKeyHash ::  PubKeyHash
-tresoryPubKeyHash = PubKeyHash $ toBuiltin $ bytesFromHex myHash
-
-tresoryHash :: BS.ByteString
-tresoryHash = "867730ec6fcbcb81cee7b424400c54c1eccff03afd36bf59a691fba8"
---------------------------------------------------------------------------------------------------
-------------------------------------- SAMPLE FUNCTIONS --------------------------------------------
-
-
-myPubKeyHash ::  PubKeyHash
-myPubKeyHash = PubKeyHash $ toBuiltin $ bytesFromHex myHash
+------------------------------------- TEST VALUE --------------------------------------------
 
 myTime1 :: String
 myTime1 = "2023-05-12T16:00:00.0Z"
@@ -199,17 +216,11 @@ myEnd2 = fromJust $ posixTimeFromIso8601 myEndOfContract2
 myPosixTime :: V2Api.POSIXTime
 myPosixTime = 1683907200000
 
-
---myBefore :: POSIXTime -> Interval POSIXTime -> Bool
---myBefore t i = 
-myHash :: BS.ByteString
-myHash = "867730ec6fcbcb81cee7b424400c54c1eccff03afd36bf59a691fba8"
-
 myTxHash :: TxHash
 myTxHash = "00a0ee3a5436609aabeb4847a1cfbd9d061ac57bcf36b91917a9fdffe3c25992"
 
 myAdaLotto :: AdaLottoDatum
-myAdaLotto =AdaLottoDatum myPubKeyHash myTx1 [1,2,3]
+myAdaLotto =AdaLottoDatum tresoryPubKeyHash' myPubKeyHash' myTx1 
 
 jsonSample :: BSL.ByteString
 jsonSample = "{\"ticket\": [1,8,11,27,34,42]}"

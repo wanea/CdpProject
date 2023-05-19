@@ -100,9 +100,9 @@ writeAdaLottoDatumToFile tpkh wpkh time  = writeDataToFile "./datum/adaLottoDatu
     }
 
 makeFakeWinnerDatum :: IO()
-makeFakeWinnerDatum = writeAdaLottoDatumToFile tresoryPubKeyHash' myPubKeyHash' "2023-05-18T16:00:00.0Z" 
+makeFakeWinnerDatum = writeAdaLottoDatumToFile tresoryPubKeyHash' myPubKeyHash' "2023-05-19T01:00:00.0Z" 
 makeFakeWinnerDatum' :: IO()
-makeFakeWinnerDatum' = printAdaLottoDatumJSON tresoryPubKeyHash' myPubKeyHash' "2023-05-18T16:00:00.0Z"
+makeFakeWinnerDatum' = printAdaLottoDatumJSON tresoryPubKeyHash' myPubKeyHash' "2023-05-19T01:00:00.0Z"
 
  --This function assemble data fund in metadata with blockfrost API
 --makeWinnerDatum :: IO()
@@ -118,7 +118,7 @@ tresoryPubKeyHash' ::  PubKeyHash
 tresoryPubKeyHash' = PubKeyHash $ toBuiltin $ bytesFromHex tresoryHash
 
 tresoryHash :: BS.ByteString
-tresoryHash = "6df72ce6ff0d726e34a2f833aacd299267a773335e0329f13408b6b1"
+tresoryHash = "d4bcd08ddc025700f9b04a67202d65b87161c4951bfde224e915389b"
 --------------------------------------------------------------------------------------------------
 ------------------------------------- SIGNER FUNCTION --------------------------------------------
 winnerPubKeyHash :: BS.ByteString -> PubKeyHash
